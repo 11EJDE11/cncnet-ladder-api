@@ -10,6 +10,10 @@ use Illuminate\Support\Str;
 
 class ReplayService
 {
+    // First bytes of a .yrrp file - Magic 0x50525259 followed by the format version.
+    private const MAGIC = "YRRP";
+    private const SUPPORTED_VERSION = 1;
+
     private function disk()
     {
         return Storage::disk(config('replays.disk'));
@@ -34,22 +38,47 @@ class ReplayService
     }
 
     /**
+     * Checks the replay magic and format version rather than the reported MIME type or extension,
+     * neither of which the uploader can be trusted on.
+     */
+    public function looksLikeReplay(?UploadedFile $file): bool
+    {
+        if ($file === null || !$file->isValid())
+        {
+            return false;
+        }
+
+        $handle = @fopen($file->getRealPath(), 'rb');
+        if ($handle === false)
+        {
+            return false;
+        }
+
+        $head = fread($handle, 8);
+        fclose($handle);
+
+        if ($head === false || strlen($head) < 8 || substr($head, 0, 4) !== self::MAGIC)
+        {
+            return false;
+        }
+
+        return unpack('V', substr($head, 4, 4))[1] === self::SUPPORTED_VERSION;
+    }
+
+    /**
      * Stores an uploaded replay, replacing any existing replay for the same game and player.
-     *
-     * @return GameReplay
      */
     public function storeReplay(int $gameId, int $playerId, int $userId, UploadedFile $file): GameReplay
     {
         // Randomised name rather than one derived from game/player ids, so replay files cannot be
-        // enumerated if the storage root is ever served directly by mistake. .yrrp is the
-        // extension the client associates with replays.
+        // enumerated if the storage root is ever served directly by mistake.
         $filename = Str::random(40) . '.yrrp';
         $directory = config('replays.directory');
 
         $this->disk()->putFileAs($directory, $file, $filename);
 
-        // A re-upload for the same game and player supersedes the previous file. Remove the old
-        // one from disk first, otherwise it would be orphaned and never counted against budget.
+        // A re-upload supersedes the previous file. Remove the old one from disk first, otherwise
+        // it would be orphaned and never counted against budget.
         $existing = GameReplay::where('game_id', $gameId)->where('player_id', $playerId)->first();
         if ($existing !== null)
         {
@@ -71,10 +100,8 @@ class ReplayService
     }
 
     /**
-     * Deletes oldest-first until stored replays fit within the configured budget.
-     *
-     * Runs after each upload rather than on a schedule, so the budget cannot be exceeded for long
-     * regardless of upload rate.
+     * Deletes oldest-first until stored replays fit within the configured budget. Runs after each
+     * upload rather than on a schedule, so the budget cannot be exceeded for long.
      */
     public function enforceStorageBudget(): void
     {
@@ -113,8 +140,8 @@ class ReplayService
     }
 
     /**
-     * Removes a replay's file from disk. The database row is handled separately so that a missing
-     * file never blocks the row being replaced or deleted.
+     * Removes a replay's file from disk. The database row is handled separately so a missing file
+     * never blocks the row being replaced or deleted.
      */
     private function deleteFile(GameReplay $replay): void
     {
@@ -149,9 +176,8 @@ class ReplayService
     }
 
     /**
-     * Filename offered to the browser. Includes game and player so downloaded files stay
-     * distinguishable once several are saved side by side, and uses the .yrrp extension the
-     * client lists replays by, so a download can be dropped straight into the Replays folder.
+     * Filename offered to the browser. Includes game and player so several downloads stay
+     * distinguishable, and uses the .yrrp extension the client lists replays by.
      */
     public function downloadName(GameReplay $replay): string
     {

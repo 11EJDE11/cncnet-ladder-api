@@ -20,9 +20,8 @@ class ReplayController extends Controller
     /**
      * Serves a stored replay file.
      *
-     * Replays are held on a private disk and only ever handed out through here, so access can be
-     * restricted. During the beta that means staff only, controlled by the
-     * 'replays.staff_only_downloads' config flag.
+     * Replays live on a private disk and are only ever handed out through here, so access follows
+     * the ladder's replay tier - see Ladder::allowedToDownloadReplays.
      */
     public function download(Request $request, $replayId)
     {
@@ -34,7 +33,8 @@ class ReplayController extends Controller
             abort(404);
         }
 
-        if (config('replays.staff_only_downloads') && !$this->userIsStaff($user, $replay))
+        $ladder = self::ladderForReplay($replay);
+        if ($ladder === null || !$ladder->allowedToDownloadReplays($user))
         {
             Log::warning("ReplayController: user {$user->id} was denied replay {$replayId}.");
             abort(403);
@@ -52,39 +52,12 @@ class ReplayController extends Controller
     }
 
     /**
-     * Global staff, or a moderator/admin of the ladder the game belongs to.
+     * games has no ladder_id column - the ladder is reached via the monthly ladder_history row.
      */
-    private function userIsStaff($user, GameReplay $replay): bool
+    private static function ladderForReplay(GameReplay $replay): ?Ladder
     {
-        if ($user === null)
-        {
-            return false;
-        }
+        $history = optional($replay->game)->ladderHistory;
 
-        if ($user->isModerator())
-        {
-            return true;
-        }
-
-        $game = $replay->game;
-        if ($game === null)
-        {
-            return false;
-        }
-
-        // games has no ladder_id column - the ladder is reached via the monthly ladder_history row.
-        $history = $game->ladderHistory;
-        if ($history === null)
-        {
-            return false;
-        }
-
-        $ladder = Ladder::find($history->ladder_id);
-        if ($ladder === null)
-        {
-            return false;
-        }
-
-        return $user->isLadderMod($ladder) || $user->isLadderAdmin($ladder);
+        return $history === null ? null : Ladder::find($history->ladder_id);
     }
 }

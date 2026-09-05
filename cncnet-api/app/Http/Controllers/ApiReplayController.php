@@ -25,8 +25,7 @@ class ApiReplayController extends Controller
      * Accepts a replay recorded by the Quick Match spawner for a finished game.
      *
      * A replay is only accepted when the authenticated user owns the player it is being uploaded
-     * for, and that player actually took part in the game. Without both checks any authenticated
-     * user could attach arbitrary files to any game.
+     * for, and that player actually took part in the game.
      */
     public function uploadReplay(Request $request, $ladderId, $gameId, $playerId)
     {
@@ -38,6 +37,14 @@ class ApiReplayController extends Controller
                 // max: is in kilobytes.
                 'file' => 'required|file|max:' . ((int) config('replays.max_upload_mb') * 1024),
             ]);
+
+            $file = $request->file('file');
+
+            if (!$this->replayService->looksLikeReplay($file))
+            {
+                Log::warning("ApiReplayController: user {$user->id} uploaded a file that is not a replay for game {$gameId}.");
+                return response()->json(['message' => 'File is not a replay'], 422);
+            }
 
             $game = Game::find($gameId);
             if ($game === null)
@@ -55,7 +62,7 @@ class ApiReplayController extends Controller
 
             $ladder = Ladder::find($ladderId);
             $rules = $ladder ? $ladder->qmLadderRules : null;
-            if ($rules !== null && !$rules->enable_replays)
+            if ($rules !== null && !$rules->replaysEnabled())
             {
                 // The ladder has replays switched off; treat a straggling upload as a no-op rather
                 // than storing a file nobody asked for.
@@ -84,9 +91,7 @@ class ApiReplayController extends Controller
             {
                 // player_game_reports is written by SaveLadderResultJob, which runs on a queue, so
                 // it usually does not exist yet when a client uploads immediately after the match.
-                // Whoever finishes first would otherwise always be rejected. qm_match_players is
-                // written when the match is created, so it is available straight away and is just
-                // as authoritative about who was actually in the game.
+                // qm_match_players is written when the match is created and is just as authoritative.
                 $participated = QmMatchPlayer::where('qm_match_id', $game->qm_match_id)
                     ->where('player_id', $player->id)
                     ->exists();
@@ -98,12 +103,7 @@ class ApiReplayController extends Controller
                 return response()->json(['message' => 'Player did not participate in this game'], 403);
             }
 
-            $replay = $this->replayService->storeReplay(
-                $game->id,
-                $player->id,
-                $user->id,
-                $request->file('file')
-            );
+            $replay = $this->replayService->storeReplay($game->id, $player->id, $user->id, $file);
 
             return response()->json([
                 'message'   => 'Replay uploaded successfully',

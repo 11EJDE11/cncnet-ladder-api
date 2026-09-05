@@ -116,9 +116,9 @@ else {
                 @include('ladders.game._admin-game-tools')
             </div>
         </div>
-
-        @include('ladders.game._game-replays')
     @endif
+
+    @include('ladders.game._game-replays')
 
     <section class="game-detail">
         <div class="game-players-container">

@@ -1,24 +1,23 @@
 {{--
-    Per-player replay downloads.
+    Per-player replay downloads. Every participant has their own file: the replay stores that
+    player's viewport and unit selection, so each one plays back from that player's point of view.
 
-    Every participant has their own file: the replay stores that player's viewport and unit
-    selection, so each one plays back from that player's point of view.
-
-    Access is staff-only during the beta - see config/replays.php ('staff_only_downloads') and
-    ReplayController, which enforces it on the download route itself. Hiding the buttons here is
-    presentation only, not the access control.
+    Hiding the buttons here is presentation only - ReplayController enforces access on the download
+    route itself.
 --}}
 @php
     $replays = collect($playerGameReports)
         ->filter(fn($pgr) => $pgr->playerReplay !== null)
         ->sortBy(fn($pgr) => $pgr->player->username);
+
+    $canDownloadReplays = $history->ladder->allowedToDownloadReplays(\Auth::user());
 @endphp
 
-@if ($replays->isNotEmpty())
+@if ($canDownloadReplays && $replays->isNotEmpty())
     <div class="container mt-3 mb-5">
         <h5>Replays</h5>
         <p class="text-muted" style="font-size: 0.9em;">
-            One file per player, each recorded from that player's point of view. Visible to staff only.
+            One file per player, each recorded from that player's point of view.
         </p>
 
         @foreach ($replays as $pgr)

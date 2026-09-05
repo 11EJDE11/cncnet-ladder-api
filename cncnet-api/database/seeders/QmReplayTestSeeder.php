@@ -114,11 +114,11 @@ class QmReplayTestSeeder extends Seeder
                 'show_map_preview'         => true,
                 'reduce_map_repeats'       => 0,
                 'use_ranked_map_picker'    => false,
-                'enable_replays'           => true,
+                'replays'                  => QmLadderRules::REPLAYS_ALL,
             ]
         );
 
-        $this->command->info("Rules #{$rules->id} enable_replays=" . ($rules->enable_replays ? 'YES' : 'no'));
+        $this->command->info("Rules #{$rules->id} replays={$rules->replays}");
 
         $mapPool = MapPool::updateOrCreate(
             ['ladder_id' => $ladder->id, 'name' => 'QM Replay Test Pool'],
